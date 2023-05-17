@@ -1,0 +1,285 @@
+---
+title: "Final Project"
+author: "Jiaqin Wu"
+date: "2023-05-05"
+output: pdf_document
+---
+
+Consider a state government in the United States that administers a child support program. This program requires non-custodial parents (NCPs) to pay monthly child support payments to custodial parents of their children. If NCPs fail to make payments, they can owe child support debt, leading to incarceration.
+
+Suppose that a state child support agency introduced a program to provide intensive case management services to NCPs so that they could help them find jobs to make child support payments and have better relationships with their non-custodial children and the custodial parents. The program was administered in selected local child support sites across the state, and in these sites, the program was rolled out at varying dates.
+
+Please download final_data_dd.csv. This dataset contains the following site-level panel data (each row in the dataset corresponds to an observation for a given site at a given calendar quarter):
+• site_id = identification number for a local child support office site
+• year_qtr = calendar quarter of observation (eg 2011.25 is the second quarter in 2011)
+• treatment = indicator equal to 1 if the site was selected for treatment
+• treatment_year_qtr = calendar quarter the site began the program if selected for treatment
+• ncp_emp_rate = employment rate for NCPs served by the site in the calendar quarter
+• smom_emp_rate = employment rate for single mothers served by the site in the calendar quarter
+• ncp_wdebt = fraction of NCPs served by the site in the calendar quarter that owe child support debt
+• Nncp = number of NCPs served by the site in the calendar quarter
+
+
+1. Confirm that we have varying dates of treatment. 
+
+```{r message=FALSE, warning=FALSE}
+# Load the packages
+library(readr)
+library(ggplot2)
+library(miceadds)
+library(ivreg)
+library(dplyr)
+library(stargazer)
+library(fixest) 
+```
+
+```{r}
+# Load the dataset
+final <- read_csv("~/Desktop/final_data_dd.csv",show_col_types = FALSE)
+
+# Check the distribution of treatment year
+table(final$treatment_year_qtr)
+```
+
+
+2. Plot average employment rate for NCPs served, employment rate for single mothers served, and fraction of NCPs served that owe child support debt over calendar year for the treatment and control groups. 
+
+```{r message=FALSE, warning=FALSE}
+# Plot average employment rate for NCPs served
+### Create a new df contained mean employment rate for NCPs served in each year
+plotdata <- aggregate(final$ncp_emp_rate, list(final$year_qtr, final$treatment), FUN = mean)
+### Visualize the plot
+ggplot(data = plotdata, aes(x = Group.1, y =x,color=as.factor(Group.2))) + 
+  geom_line(data = subset(plotdata, Group.2 == 1), linetype = "solid", size = 1) + 
+  geom_line(data = subset(plotdata, Group.2 == 0), linetype = "solid", size = 1) + 
+  labs(x = "Year", y = "Average Employment Rate for NCPs", title = "Average Employment Rate for NCPs over Calendar Years") +
+  theme_bw() +
+  xlim(2011, 2021) + scale_x_continuous(breaks = seq(2011, 2021, 1)) + 
+  geom_vline(xintercept=2014,color='black',linetype=2)+
+  geom_vline(xintercept=2016.75,color='black',linetype=2)+
+  scale_color_manual(name = "NCP Groups", values = c("blue", "red"), 
+                     labels = c("Control Group", "Treatment Group"))+
+  annotate(x=2014,y=0.62,label="1st Began Time of Treatment",vjust=2,geom="label")+
+  annotate(x=2016.75,y=0.68,label="Last Began Time of Treatment",vjust=2,geom="label")
+
+# Plot average employment rate for single mother served
+### Create a new df contained mean employment rate for single mothers served in each year
+plotdata1 <- aggregate(final$smom_emp_rate, list(final$year_qtr, final$treatment), FUN = mean)
+### Visualize the plot
+ggplot(data = plotdata1, aes(x = Group.1, y =x,color=as.factor(Group.2))) + 
+  geom_line(data = subset(plotdata1, Group.2 == 1), linetype = "solid", size = 1) + 
+  geom_line(data = subset(plotdata1, Group.2 == 0), linetype = "solid", size = 1) + 
+  labs(x = "Year", y = "Average Employment Rate for Single Mothers", title = "Average Employment Rate for Single Mothers over Calendar Years") +
+  theme_bw() +
+  xlim(2011, 2021) + scale_x_continuous(breaks = seq(2011, 2021, 1)) + 
+  geom_vline(xintercept=2014,color='black',linetype=2)+
+  geom_vline(xintercept=2016.75,color='black',linetype=2)+
+  scale_color_manual(name = "NCP Groups", values = c("blue", "red"), 
+                     labels = c("Control Group", "Treatment Group"))+
+  annotate(x=2014,y=0.65,label="1st Began Time of Treatment",vjust=2,geom="label")+
+  annotate(x=2016.75,y=0.7,label="Last Began Time of Treatment",vjust=2,geom="label")
+
+# Plot average fraction of NCPs served that owe child support debt
+### Create a new df contained mean employment rate for single mothers served in each year
+plotdata2 <- aggregate(final$ncp_wdebt, list(final$year_qtr, final$treatment), FUN = mean)
+### Visualize the plot
+ggplot(data = plotdata2, aes(x = Group.1, y =x,color=as.factor(Group.2))) + 
+  geom_line(data = subset(plotdata2, Group.2 == 1), linetype = "solid", size = 1) + 
+  geom_line(data = subset(plotdata2, Group.2 == 0), linetype = "solid", size = 1) + 
+  labs(x = "Year", y = "Average Fraction of NCPs that Owe Child Support Debt", title = "Average Fraction of NCPs that Owe Child Support Debt over Calendar Years") +
+  theme_bw() +
+  xlim(2011, 2021) + scale_x_continuous(breaks = seq(2011, 2021, 1)) + 
+  geom_vline(xintercept=2014,color='black',linetype=2)+
+  geom_vline(xintercept=2016.75,color='black',linetype=2)+
+  scale_color_manual(name = "NCP Groups", values = c("blue", "red"), 
+                     labels = c("Control Group", "Treatment Group"))+
+  annotate(x=2014,y=0.55,label="1st Began Time of Treatment",vjust=2,geom="label")+
+  annotate(x=2016.75,y=0.63,label="Last Began Time of Treatment",vjust=2,geom="label")
+```
+
+3. Using observations for treated NCP only, create time since treatment and plot employment rate for NCPs served, employment rate for single mothers served, and fraction of NCPs served that owe child support debt by time since treatment. 
+
+```{r message=FALSE, warning=FALSE}
+# Create a new final1 contained observations for treated NCP only
+final1 <- final[final$treatment ==1,]
+
+# Create a new variable "time_since_treatment"
+final1$time_since_treatment <- final1$year_qtr - final1$treatment_year_qtr
+
+# Calculate average employment rate for NCPs served by time since treatment
+plotdata3 <- aggregate(final1$ncp_emp_rate, list(final1$time_since_treatment), FUN = mean)
+
+# Visualize the plot
+ggplot(data = plotdata3, aes(x = Group.1, y = x)) + 
+  geom_point() +
+  geom_line() + 
+  geom_vline(xintercept=0,color='red',linetype=2) +
+  labs(x = "Time since Received Intensive Case Management Services (Years)", y = "Average Employment Rate for NCPs") +
+  xlim(-6, 7) + scale_x_continuous(breaks = seq(-6, 7, 1)) + 
+  theme_bw()
+# , title = "Average Employment Rate for NCPs by Time since Treatment"
+# Calculate average employment rate for single mothers served by time since treatment
+plotdata4 <- aggregate(final1$smom_emp_rate, list(final1$time_since_treatment), FUN = mean)
+
+# Visualize the plot
+ggplot(data = plotdata4, aes(x = Group.1, y = x)) + 
+  geom_point() +
+  geom_line() + 
+  geom_vline(xintercept=0,color='red',linetype=2) +
+  labs(x = "Time since Received Intensive Case Management Services (Years)", y = "Average Employment Rate for Single Mothers") +
+  xlim(-6, 7) + scale_x_continuous(breaks = seq(-6, 7, 1)) + 
+  theme_bw()
+# , title = "Average Employment Rate for Single Mothers by Time since Treatment"
+# Calculate average fraction of NCPs that owe child support debt by time since treatment
+plotdata5 <- aggregate(final1$ncp_wdebt, list(final1$time_since_treatment), FUN = mean)
+
+# Visualize the plot
+ggplot(data = plotdata5, aes(x = Group.1, y = x)) + 
+  geom_point() +
+  geom_line() + 
+  geom_vline(xintercept=0,color='red',linetype=2) +
+  labs(x = "Time since Received Intensive Case Management Services (Years)", y = "Average Fraction of NCPs that Owe Child Support Debt") +
+  xlim(-6, 7) + scale_x_continuous(breaks = seq(-6, 7, 1)) + 
+  theme_bw()
+# , title = "Average Fraction of NCPs that Owe Child Support Debt by Time since Treatment"
+```
+
+4. Define time since treatment and estimate the following regression specification: $$\gamma_{it} = \alpha_0 + \alpha_1T_i + \sum_{k\ne0}[\delta_kD_{ik}] + \gamma_n + \gamma_s + \gamma_t + \epsilon_{it}$$ where $\gamma_{it}$ denote employment rate (debt rate) for NCP i in year t, $T_i$ denote an indicator for receiving intensive case management services, $D_{ik}$ denotes an indicator variable for receiving intensive case management and having time since treatment = k, $\gamma_n$ denotes number of NCPs served by the site fixed effects, $\gamma_s$ denotes site id dummies and $\gamma_t$ denotes calendar year dummies. Plot the $\delta_k$ coefficients over time since treatment. 
+
+```{r message=FALSE, warning=FALSE}
+# Create a new variable "time_since_treatment"
+final$time_since_treatment = case_when(final$treatment == 1 ~ final$year_qtr - final$treatment_year_qtr,final$treatment == 0 ~ 0)
+
+# Estimate the Average Employment Rate for NCP Regression
+ddreg = feols(ncp_emp_rate ~ i(time_since_treatment, treatment, ref = 0) | year_qtr+site_id+Nncp,data = final)
+summary(ddreg)
+
+# Plot the Average Employment Rate for NCP Coefficients
+iplot(ddreg, xlab = 'Time since Received Intensive Case Management Services (Years)',
+      main = '')
+#Average Employment Rate for NCPs DD Coefficients
+# Estimate the Average Employment Rate for Single Mothers Regression
+ddreg1 = feols(smom_emp_rate ~ i(time_since_treatment, treatment, ref = 0) | year_qtr+site_id+Nncp,data = final)
+summary(ddreg1)
+
+# Plot the Average Employment Rate for Single Mothers Coefficients
+iplot(ddreg1, xlab = 'Time since Received Intensive Case Management Services (Years)',
+      main = '')
+#Average Employment Rate for Single Mothers DD Coefficients
+
+# Estimate the Average Employment Rate for Single Mothers Regression
+ddreg2 = feols(ncp_wdebt ~ i(time_since_treatment, treatment, ref = 0) | year_qtr+site_id+Nncp,data = final)
+summary(ddreg2)
+
+# Plot the Average Employment Rate for Single Mothers Coefficients
+iplot(ddreg2, xlab = 'Time since Received Intensive Case Management Services (Years)',
+      main = '')
+# Average Fraction of NCPs that Owe Child Support Debt DD Coefficients
+```
+
+5. Introduce a new variable called TAfter. TAfter is defined as T multiplied by After, where T is an indicator for a treatment observation and After is an indicator for time since treatment being positive. We then estimate the following regression:
+$$\gamma_{it} = \alpha_0 + \alpha_1T_i + \delta T_{i}After+ \gamma_n + \gamma_s + \gamma_t + \epsilon_{it}$$
+We estimate the coefficients between TAfter and the outcome variables and use them to calculate the effect of a 1% increase in employment rate on the debt fraction. 
+
+```{r}
+# Generate two new indicators
+final$After = case_when(final$time_since_treatment > 0 ~ 1,final$time_since_treatment <= 0 ~ 0) 
+final$TAfter = final$treatment*final$After
+
+# Regression of employment rate for NCPs
+tafter_reg1 = feols(ncp_emp_rate ~ TAfter | Nncp+ year_qtr + site_id, data = final)
+summary(tafter_reg1)
+
+# Regression of employment rate for single mothers
+tafter_reg2 = feols(smom_emp_rate ~ TAfter  | Nncp+ year_qtr+ site_id, data = final)
+summary(tafter_reg2)
+
+# Regression of debt fraction for NCPs
+tafter_reg3 = feols(ncp_wdebt ~ TAfter  | Nncp+ year_qtr+ site_id, data = final)
+summary(tafter_reg3)
+
+# Calculate the effect
+num = tafter_reg3$coefficients[1]/tafter_reg1$coefficients[1]*1
+cat("An 1% increase in the employment rate for NCPs corresponds around",-round(num,3),"% decrease in debt fraction for NCPs.")
+```
+6. Implement a permutation test taking into account the differential introduction of intensive case management services across sites and calendar years. Show how the true estimates compare to the permutation estimates.
+
+```{r}
+# Create treatment and control groups
+treatment <- final[final$treatment == 1,]
+control <- final[final$treatment == 0,]
+
+# Set number of permutations
+n_perms <- 1000
+t <- coefficients(tafter_reg1)
+
+# Initialize null distribution
+null_dist <- rep(NA, n_perms)
+
+# Permute treatment variable and calculate mean difference
+for (i in 1:n_perms) {
+  perm_treatment <- sample(c(0,1), size=nrow(final), replace=TRUE)
+  perm_mean_diff <- mean(final$ncp_emp_rate[perm_treatment==1]) - mean(final$ncp_emp_rate[perm_treatment==0])
+  null_dist[i] <- perm_mean_diff
+}
+
+# Plot histogram of null distribution with true mean difference
+hist(null_dist, breaks=30, col="grey", xlab="Mean Difference in ncp_emp_rate", main="Permutation Test",,xlim = c(-0.1, 0.1))
+abline(v=t, col="red", lwd=2)
+```
+
+```{r}
+# Set number of permutations
+n_perms <- 1000
+t1 <- coefficients(tafter_reg2)
+
+# Initialize null distribution
+null_dist1 <- rep(NA, n_perms)
+
+# Permute treatment variable and calculate mean difference
+for (i in 1:n_perms) {
+  perm_treatment1 <- sample(c(0,1), size=nrow(final), replace=TRUE)
+  perm_mean_diff1 <- mean(final$smom_emp_rate[perm_treatment1==1]) - mean(final$smom_emp_rate[perm_treatment1==0])
+  null_dist1[i] <- perm_mean_diff1
+}
+
+# Plot histogram of null distribution with true mean difference
+hist(null_dist1, breaks=30, col="grey", xlab="Mean Difference in smon_emp_rate", main="Permutation Test",xlim = c(-0.1, 0.1))
+abline(v=t1, col="red", lwd=2)
+```
+
+
+```{r}
+# Set number of permutations
+n_perms <- 1000
+t2 <- coefficients(tafter_reg3)
+
+# Initialize null distribution
+null_dist2 <- rep(NA, n_perms)
+
+# Permute treatment variable and calculate mean difference
+for (i in 1:n_perms) {
+  perm_treatment2 <- sample(c(0,1), size=nrow(final), replace=TRUE)
+  perm_mean_diff2 <- mean(final$ncp_wdebt[perm_treatment2==1]) - mean(final$ncp_wdebt[perm_treatment2==0])
+  null_dist2[i] <- perm_mean_diff2
+}
+
+# Plot histogram of null distribution with true mean difference
+hist(null_dist2, breaks=30, col="grey", xlab="Mean Difference in ncp_wdebt", main="Permutation Test",xlim = c(-0.1, 0.1))
+abline(v=t2, col="red", lwd=2)
+```
+Add one certain color on each permutation test.
+
+```{r}
+# Plot histogram of null distribution for ncp_emp_rate
+hist(null_dist, breaks=30, col="blue", xlab="Mean Difference in NCP Employment Rate", main="Permutation Test", xlim=c(-0.1, 0.1), ylim=c(0, 200))
+abline(v=t, col="red", lwd=2)
+
+# Plot histogram of null distribution for smon_emp_rate
+hist(null_dist1, breaks=30, col="green", xlab="Mean Difference in Single Mother Employment Rate", main="Permutation Test", xlim=c(-0.1, 0.1), ylim=c(0, 200))
+abline(v=t1, col="red", lwd=2)
+
+# Plot histogram of null distribution for ncp_wdebt
+hist(null_dist2, breaks=30, col="orange", xlab="Mean Difference in NCP Debt Fraction", main="Permutation Test", xlim=c(-0.1, 0.1), ylim=c(0, 200))
+abline(v=t2, col="red", lwd=2)
+```
